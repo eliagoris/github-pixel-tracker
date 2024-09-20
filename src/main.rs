@@ -47,6 +47,7 @@ fn handle_client(mut stream: TcpStream) {
             "HTTP/1.1 200 OK\r\n\
              Content-Type: image/gif\r\n\
              Content-Length: {}\r\n\
+             Cache-Control: max-age=0, no-cache, no-store, must-revalidate\r\n
              Connection: close\r\n\r\n",
             pixel_data().len()
         );
