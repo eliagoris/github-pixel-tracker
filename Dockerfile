@@ -18,3 +18,5 @@ FROM debian:bookworm-slim AS runtime
 WORKDIR /app
 COPY --from=builder /app/target/release/pixel-tracker-rust /usr/local/bin
 ENTRYPOINT ["/usr/local/bin/pixel-tracker-rust"]
+
+RUN apt-get update && apt-get install -y sqlite3
