@@ -1,11 +1,10 @@
-use std::io::{ Write, Read };
+use std::io::{ Read, Write };
 use std::net::{ TcpListener, TcpStream };
 use std::fs::OpenOptions;
 use std::sync::{ Arc, Mutex };
 use std::thread;
 use std::time::SystemTime;
 
-// Função para servir o pixel invisível (1x1 GIF transparente)
 fn pixel_data() -> &'static [u8] {
     &[
         0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0x01, 0x00, 0x01, 0x00, 0x80, 0xff, 0x00, 0xff, 0xff, 0xff,
@@ -14,37 +13,41 @@ fn pixel_data() -> &'static [u8] {
     ]
 }
 
-// Função para lidar com a conexão de um cliente
-fn handle_client(stream: TcpStream, log_file: Arc<Mutex<std::fs::File>>) {
-    let mut stream = stream;
+fn handle_client(mut stream: TcpStream, log_file: Arc<Mutex<std::fs::File>>) {
     let mut buffer = [0; 512];
 
     // Ler a requisição HTTP
-    stream.read(&mut buffer).unwrap();
+    if let Ok(_) = stream.read(&mut buffer) {
+        // Registrar o acesso
+        let log_entry = format!(
+            "Access from IP: {}, Time: {:?}\n",
+            stream.peer_addr().unwrap(),
+            SystemTime::now()
+        );
+        let mut file = log_file.lock().unwrap();
+        file.write_all(log_entry.as_bytes()).unwrap();
 
-    // Registrar o acesso
-    let log_entry = format!(
-        "Access from IP: {}, Time: {:?}\n",
-        stream.peer_addr().unwrap(),
-        SystemTime::now()
-    );
-    let mut file = log_file.lock().unwrap();
-    file.write_all(log_entry.as_bytes()).unwrap();
+        // Criar a resposta HTTP para servir o pixel invisível
+        let response = format!(
+            "HTTP/1.1 200 OK\r\n\
+             Content-Type: image/gif\r\n\
+             Content-Length: {}\r\n\
+             Connection: close\r\n\r\n",
+            pixel_data().len()
+        );
 
-    // Criar a resposta HTTP para servir o pixel invisível
-    let response = format!(
-        "HTTP/1.1 200 OK\r\nContent-Type: image/gif\r\nContent-Length: {}\r\n\r\n",
-        pixel_data().len()
-    );
+        // Enviar o cabeçalho e o conteúdo do pixel
+        let _ = stream.write_all(response.as_bytes());
+        let _ = stream.write_all(pixel_data());
+        let _ = stream.flush(); // Certifique-se de que todos os dados são enviados corretamente
+    }
 
-    // Enviar o cabeçalho e o conteúdo do pixel
-    stream.write_all(response.as_bytes()).unwrap();
-    stream.write_all(pixel_data()).unwrap();
-    stream.flush().unwrap();
+    // Fecha o stream para evitar problemas com HTTP/2
+    let _ = stream.shutdown(std::net::Shutdown::Both);
 }
 
 fn main() {
-    // Iniciar o servidor TCP na porta 8080
+    // Mude a porta para 8080, pois Fly.io usa essa porta
     let listener = TcpListener::bind("0.0.0.0:8080").unwrap();
     println!("Server running on port 8080");
 
