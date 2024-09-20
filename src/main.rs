@@ -23,10 +23,22 @@ fn get_database_path() -> String {
 
 fn handle_client(mut stream: TcpStream) {
     let db_path = get_database_path();
-    let mut buffer = [0; 512];
+    let mut buffer = [0; 1024]; // Increase buffer size to read more data
 
     // Read the HTTP request
-    if let Ok(_) = stream.read(&mut buffer) {
+    if let Ok(bytes_read) = stream.read(&mut buffer) {
+        // Convert the buffer into a string
+        let request = String::from_utf8_lossy(&buffer[..bytes_read]);
+
+        // Extract the User-Agent header
+        let user_agent = if
+            let Some(line) = request.lines().find(|line| line.starts_with("User-Agent:"))
+        {
+            line.trim_start_matches("User-Agent: ").to_string()
+        } else {
+            "Unknown".to_string()
+        };
+
         // Log the access
         let ip = stream.peer_addr().unwrap().to_string();
         let time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
@@ -34,10 +46,10 @@ fn handle_client(mut stream: TcpStream) {
         // Open a connection to the database
         let conn = Connection::open(&db_path).unwrap();
 
-        // Insert the log entry into the database
+        // Insert the log entry into the database, including the user_agent
         conn.execute(
-            "INSERT INTO access_log (ip, time) VALUES (?1, ?2)",
-            params![ip, time]
+            "INSERT INTO access_log (ip, time, user_agent) VALUES (?1, ?2, ?3)",
+            params![ip, time, user_agent]
         ).unwrap();
 
         // Create the HTTP response to serve the invisible pixel
@@ -75,13 +87,14 @@ fn main() {
     let db_dir = std::path::Path::new(&db_path).parent().expect("Failed to get database directory");
     std::fs::create_dir_all(db_dir).expect("Failed to create database directory");
 
-    // Open the database and create the table if it doesn't exist
+    // Open the database and create the table if it doesn't exist, including the user_agent column
     let conn = Connection::open(&db_path).unwrap();
     conn.execute(
         "CREATE TABLE IF NOT EXISTS access_log (
             id INTEGER PRIMARY KEY,
             ip TEXT NOT NULL,
-            time INTEGER NOT NULL
+            time INTEGER NOT NULL,
+            user_agent TEXT
         )",
         []
     ).unwrap();
